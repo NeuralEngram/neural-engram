@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAEM — Multi-Agent Ebbinghaus Memory</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #111118;
+    --bg3: #16161f;
+    --border: #1e1e2e;
+    --accent: #00e5ff;
+    --accent2: #7c3aed;
+    --accent3: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #475569;
+    --executor: #00e5ff;
+    --planner: #7c3aed;
+    --memory: #10b981;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 14px; font-weight: 700;
+    color: #000;
+  }
+
+  .logo-text h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 16px; font-weight: 700;
+    color: var(--text);
+  }
+
+  .logo-text p {
+    font-size: 11px; color: var(--text3);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .agent-tabs {
+    display: flex; gap: 8px;
+  }
+
+  .agent-tab {
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .agent-tab.executor { border-color: var(--executor); color: var(--executor); }
+  .agent-tab.planner  { border-color: var(--planner);  color: var(--planner);  }
+  .agent-tab.memory   { border-color: var(--memory);   color: var(--memory);   }
+  .agent-tab.active.executor { background: var(--executor); color: #000; }
+  .agent-tab.active.planner  { background: var(--accent2);  color: #fff; }
+  .agent-tab.active.memory   { background: var(--memory);   color: #000; }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent3);
+    box-shadow: 0 0 8px var(--accent3);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* ── Main layout ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Left — Chat ── */
+  .chat-area {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+  }
+
+  /* routing banner */
+  .routing-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    background: var(--bg3);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    color: var(--text2);
+    flex-shrink: 0;
+  }
+
+  .route-step {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  .route-step.planner  { background: rgba(124,58,237,0.2); color: var(--planner);  border: 1px solid rgba(124,58,237,0.3); }
+  .route-step.executor { background: rgba(0,229,255,0.1);  color: var(--executor); border: 1px solid rgba(0,229,255,0.2); }
+  .route-step.memory   { background: rgba(16,185,129,0.1); color: var(--memory);   border: 1px solid rgba(16,185,129,0.2); }
+
+  .route-arrow { color: var(--text3); font-size: 14px; }
+
+  .route-step.active {
+    box-shadow: 0 0 10px currentColor;
+    animation: glow 1s ease-in-out;
+  }
+
+  @keyframes glow {
+    0% { box-shadow: 0 0 0 currentColor; }
+    50% { box-shadow: 0 0 15px currentColor; }
+    100% { box-shadow: 0 0 5px currentColor; }
+  }
+
+  /* messages */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .msg {
+    display: flex;
+    gap: 12px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .msg.user { flex-direction: row-reverse; }
+
+  .msg-avatar {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .msg.user .msg-avatar { background: linear-gradient(135deg, #334155, #1e293b); color: var(--text2); }
+  .msg.agent .msg-avatar { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #000; font-family: 'Space Mono', monospace; font-size: 10px; }
+
+  .msg-body { max-width: 70%; }
+
+  .msg-meta {
+    font-size: 11px; color: var(--text3);
+    margin-bottom: 4px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .msg.user .msg-meta { text-align: right; }
+
+  .msg-bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .msg.user .msg-bubble {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-top-right-radius: 4px;
+  }
+
+  .msg.agent .msg-bubble {
+    background: linear-gradient(135deg, rgba(0,229,255,0.05), rgba(124,58,237,0.05));
+    border: 1px solid rgba(0,229,255,0.15);
+    border-top-left-radius: 4px;
+  }
+
+  .msg-tags {
+    display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;
+  }
+
+  .msg-tag {
+    font-size: 10px; padding: 2px 8px;
+    border-radius: 10px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .msg-tag.retrieved { background: rgba(16,185,129,0.15); color: var(--memory); border: 1px solid rgba(16,185,129,0.3); }
+  .msg-tag.agent-used { background: rgba(0,229,255,0.1); color: var(--executor); border: 1px solid rgba(0,229,255,0.2); }
+  .msg-tag.routed { background: rgba(124,58,237,0.15); color: var(--planner); border: 1px solid rgba(124,58,237,0.3); }
+
+  /* typing indicator */
+  .typing {
+    display: flex; gap: 4px; align-items: center;
+    padding: 12px 16px;
+  }
+
+  .typing span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: bounce 1.2s infinite;
+  }
+
+  .typing span:nth-child(2) { animation-delay: 0.2s; }
+  .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(-6px); opacity: 1; }
+  }
+
+  /* input */
+  .input-area {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .user-select {
+    padding: 10px 12px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .msg-input {
+    flex: 1;
+    padding: 10px 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .msg-input:focus { border-color: var(--accent); }
+  .msg-input::placeholder { color: var(--text3); }
+
+  .send-btn {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 10px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: opacity 0.2s, transform 0.1s;
+    flex-shrink: 0;
+  }
+
+  .send-btn:hover { opacity: 0.85; }
+  .send-btn:active { transform: scale(0.95); }
+
+  .send-btn svg { width: 18px; height: 18px; fill: #000; }
+
+  /* ── Right — Memory Panel ── */
+  .memory-panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg2);
+  }
+
+  .panel-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; font-weight: 700;
+    color: var(--text2);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .episode-count {
+    background: var(--accent);
+    color: #000;
+    font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 10px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .memory-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  .memory-list::-webkit-scrollbar { width: 3px; }
+  .memory-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .memory-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    animation: fadeIn 0.3s ease;
+    transition: border-color 0.2s;
+  }
+
+  .memory-card:hover { border-color: rgba(0,229,255,0.3); }
+
+  .memory-card.fresh { border-color: rgba(0,229,255,0.4); }
+
+  .memory-agent-badge {
+    font-size: 9px; font-weight: 700;
+    padding: 2px 6px; border-radius: 4px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: inline-block;
+  }
+
+  .badge-executor { background: rgba(0,229,255,0.15); color: var(--executor); }
+  .badge-planner  { background: rgba(124,58,237,0.15); color: var(--planner); }
+  .badge-memory   { background: rgba(16,185,129,0.15); color: var(--memory); }
+  .badge-user     { background: rgba(148,163,184,0.15); color: var(--text2); }
+
+  .memory-content {
+    font-size: 12px; color: var(--text);
+    line-height: 1.4; margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .memory-stats {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 4px; margin-bottom: 8px;
+  }
+
+  .stat { font-size: 10px; color: var(--text3); font-family: 'Space Mono', monospace; }
+  .stat span { color: var(--text2); font-weight: 700; }
+
+  .retention-bar-wrap {
+    height: 3px; background: var(--border); border-radius: 2px;
+  }
+
+  .retention-bar {
+    height: 100%; border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  /* decay curve */
+  .curve-section {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .curve-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+
+  canvas#curveChart {
+    width: 100%; height: 80px;
+    display: block;
+  }
+
+  /* stats footer */
+  .stats-footer {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .stat-box {
+    padding: 12px;
+    text-align: center;
+    border-right: 1px solid var(--border);
+  }
+
+  .stat-box:last-child { border-right: none; }
+
+  .stat-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px; font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat-lbl {
+    font-size: 10px; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-top: 2px;
+  }
+
+  /* welcome */
+  .welcome {
+    text-align: center; padding: 40px 20px;
+    color: var(--text3);
+  }
+
+  .welcome .w-icon {
+    font-size: 40px; margin-bottom: 12px;
+  }
+
+  .welcome h3 {
+    font-size: 16px; color: var(--text2);
+    margin-bottom: 8px;
+  }
+
+  .welcome p { font-size: 13px; line-height: 1.6; }
+
+  /* ── API key input (header) ── */
+  .api-key-input {
+    width: 160px;
+    padding: 6px 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .api-key-input:focus { border-color: var(--accent); }
+  .api-key-input.missing { border-color: var(--warn); }
+  .api-key-input::placeholder { color: var(--text3); }
+
+  /* ── Toast (error/success feedback for background actions) ── */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translate(-50%, 12px);
+    max-width: min(92vw, 420px);
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--text3);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.4;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 2000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #toast.toast-error   { border-left-color: var(--danger); }
+  #toast.toast-success { border-left-color: var(--accent3); }
+  #toast.toast-info    { border-left-color: var(--accent); }
+
+  /* ── Inline panel error / loading states ── */
+  .panel-error {
+    text-align: center; padding: 24px 16px;
+    color: var(--danger);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .panel-error button {
+    margin-top: 10px;
+    padding: 6px 14px;
+    background: rgba(239,68,68,0.15);
+    border: 1px solid rgba(239,68,68,0.4);
+    border-radius: 8px;
+    color: var(--danger);
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .panel-syncing {
+    font-size: 10px;
+    color: var(--text3);
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.05em;
+  }
+
+  .alert-ok {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--accent3);
+  }
+
+  .alert-error {
+    font-size: 12px; color: var(--warn);
+  }
+
+  /* ── Responsive (phone width) ── */
+  @media (max-width: 768px) {
+    body { overflow: auto; }
+
+    header {
+      flex-wrap: wrap;
+      row-gap: 8px;
+      padding: 10px 14px;
+    }
+    .logo-text p { display: none; }
+    .agent-tabs { order: 3; width: 100%; justify-content: center; }
+    .header-right { margin-left: auto; }
+    .api-key-input { width: 120px; }
+
+    .main {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr 46%;
+    }
+
+    .chat-area {
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .msg-body { max-width: 88%; }
+
+    .routing-banner {
+      flex-wrap: wrap;
+      row-gap: 6px;
+    }
+    .routing-banner > span[style*="margin-left:auto"] {
+      margin-left: 0 !important;
+      width: 100%;
+      text-align: right;
+    }
+
+    .input-area { flex-wrap: wrap; }
+    .user-select { width: 100%; order: 1; }
+    .msg-input { order: 2; flex: 1 1 auto; min-width: 0; }
+    .send-btn { order: 3; }
+
+    .sim-row { flex-wrap: wrap; }
+    .sim-row select { flex: 1 1 100%; }
+    .sim-row button { flex: 1 1 auto; }
+
+    #comparisonModal > div,
+    #evalModal > div { padding: 16px; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">M</div>
+    <div class="logo-text">
+      <h1>MAEM</h1>
+      <p>Multi-Agent Ebbinghaus Memory</p>
+    </div>
+  </div>
+
+  <div class="agent-tabs">
+    <div class="agent-tab executor active" onclick="setActiveAgent('executor')">⚡ Executor</div>
+    <div class="agent-tab planner"  onclick="setActiveAgent('planner')">🧭 Planner</div>
+    <div class="agent-tab memory"   onclick="setActiveAgent('memory')">🧠 Memory</div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;" class="header-right">
+    <input
+      id="apiKeyInput"
+      class="api-key-input"
+      type="password"
+      placeholder="X-API-Key"
+      title="Sent as the X-API-Key header on every request. Stored only in this browser (localStorage)."
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="status-dot"></div>
+      <span style="font-size:12px;color:var(--text3);font-family:'Space Mono',monospace;" id="modelLabel">claude-sonnet</span>
+    </div>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Chat -->
+  <div class="chat-area">
+
+    <!-- Routing banner -->
+    <div class="routing-banner">
+      <span style="color:var(--text3)">PIPELINE:</span>
+      <div class="route-step planner"  id="routePlanner">🧭 PlannerAgent</div>
+      <span class="route-arrow">→</span>
+      <div class="route-step executor" id="routeExecutor">⚡ ExecutorAgent</div>
+      <span class="route-arrow">→</span>
+      <div class="route-step memory"   id="routeMemory">🧠 MemoryStore</div>
+      <span style="margin-left:auto;font-size:11px;" id="routeStatus">Ready</span>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages" id="messages">
+      <div class="welcome">
+        <div class="w-icon">🧠</div>
+        <h3>MAEM Multi-Agent System</h3>
+        <p>Three specialized agents — Planner, Executor, and Memory — working together with Ebbinghaus decay. Start a conversation to see the pipeline in action.</p>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <select class="user-select" id="userSelect">
+        <option value="alice">Alice</option>
+        <option value="bob">Bob</option>
+        <option value="charlie">Charlie</option>
+        <option value="rajan">Rajan (AD)</option>
+      </select>
+      <input
+        class="msg-input"
+        id="msgInput"
+        type="text"
+        placeholder="Type a message..."
+        onkeydown="if(event.key==='Enter') sendMessage()"
+      />
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Memory Panel -->
+  <div class="memory-panel">
+    <div class="panel-header">
+      <span class="panel-title">Episodic Memory</span>
+      <span style="display:flex;align-items:center;gap:8px;">
+        <span class="panel-syncing" id="panelSyncing" style="display:none;">Syncing…</span>
+        <span class="episode-count" id="episodeCount">0 episodes</span>
+      </span>
+    </div>
+  <!-- Caregiver Alerts -->
+  <div id="alertBanner" style="display:none; margin: 8px 12px; padding: 12px 14px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); border-radius: 10px;">
+  <div id="alertHeading" style="font-size:12px; font-weight:700; color:#ef4444; font-family:'Space Mono',monospace; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+    🚨 CAREGIVER ALERT
+  </div>
+  <div id="alertSubtitle" style="font-size:11px; color:#f87171; margin-bottom:8px; line-height:1.4;">
+    These memories are decaying fast and may need reinforcement or follow-up.
+  </div>
+  <div id="alertList" style="font-size:12px; color:#f87171; display:flex; flex-direction:column; gap:4px;"></div>
+  </div>
+    <div class="memory-list" id="memoryList">
+      <div style="text-align:center;padding:40px 16px;color:var(--text3);font-size:13px;">
+        No memories yet.<br>Start a conversation!
+      </div>
+    </div>
+
+    <!-- Decay Curve -->
+    <div class="curve-section">
+      <div class="curve-title">Retention Curve (Ebbinghaus)</div>
+      <canvas id="curveChart"></canvas>
+    </div>
+
+    <!-- Stats -->
+    <!-- Simulate Time -->
+<div class="sim-row" style="padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-shrink: 0;">
+  <select id="simHours" style="padding: 6px 10px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px;">
+    <option value="6">+6 hours</option>
+    <option value="12" selected>+12 hours</option>
+    <option value="24">+24 hours</option>
+    <option value="48">+48 hours</option>
+    <option value="72">+72 hours</option>
+  </select>
+  <button onclick="simulateTime()" id="simBtn" style="flex:1; padding: 6px 12px; background: rgba(124,58,237,0.2); border: 1px solid var(--accent2); border-radius: 8px; color: var(--accent2); font-size: 12px; cursor: pointer;">
+    ⏩ Simulate Time
+  </button>
+  <button onclick="showComparison()" id="compareBtn" style="flex:1; padding: 6px 12px; background: rgba(16,185,129,0.2); border: 1px solid var(--accent3); border-radius: 8px; color: var(--accent3); font-size: 12px; cursor: pointer;">
+  📊 Compare Alice vs Rajan
+</button>
+<button onclick="runEvaluation()" id="evalBtn" style="flex:1; padding: 6px 12px; background: rgba(245,158,11,0.2); border: 1px solid var(--warn); border-radius: 8px; color: var(--warn); font-size: 12px; cursor: pointer;">
+  🧪 Eval
+</button>
+</div>
+    <div class="stats-footer">
+      <div class="stat-box">
+        <div class="stat-val" id="statTotal">0</div>
+        <div class="stat-lbl">Total</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="statRetention">—</div>
+        <div class="stat-lbl">Avg Retention</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="statRetrieved">0</div>
+        <div class="stat-lbl">Retrieved</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+
+const API = window.location.origin;
+let activeAgent = 'executor';
+let totalRetrieved = 0;
+let memories = [];
+
+// ── API key handling ──
+// The key never ships with this file — it's typed into the header
+// input once and kept in this browser's localStorage so it survives
+// a reload. Every fetch() below attaches it as X-API-Key.
+const API_KEY_STORAGE = 'maem_api_key';
+
+function getApiKey() {
+  return (document.getElementById('apiKeyInput').value || '').trim();
+}
+
+function authHeaders(extra = {}) {
+  return { 'X-API-Key': getApiKey(), ...extra };
+}
+
+(function initApiKeyInput() {
+  const input = document.getElementById('apiKeyInput');
+  const saved = localStorage.getItem(API_KEY_STORAGE);
+  if (saved) input.value = saved;
+  if (!input.value) input.classList.add('missing');
+
+  input.addEventListener('input', () => {
+    localStorage.setItem(API_KEY_STORAGE, input.value.trim());
+    input.classList.toggle('missing', !input.value.trim());
+  });
+})();
+
+// ── Toast — visible feedback for background/async actions ──
+function showToast(message, type = 'error', duration = 4500) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = message;
+  el.className = `toast-${type} show`;
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// Shared handling for "the request went through but the server said no".
+// Surfaces the specific reason (bad/missing key vs. anything else)
+// instead of letting callers guess from a raw status code.
+function describeHttpError(res, body) {
+  if (res.status === 401) {
+    return 'Invalid or missing API key — check the X-API-Key field above.';
+  }
+  if (res.status === 429) {
+    return 'Rate limited — slow down and try again in a moment.';
+  }
+  return (body && body.detail) ? body.detail : `Request failed (HTTP ${res.status}).`;
+}
+
+function setActiveAgent(agent) {
+  activeAgent = agent;
+  document.querySelectorAll('.agent-tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.agent-tab.${agent}`).classList.add('active');
+}
+
+function animateRoute(path) {
+  const steps = ['routePlanner', 'routeExecutor', 'routeMemory'];
+  steps.forEach(s => document.getElementById(s).classList.remove('active'));
+  let i = 0;
+  const interval = setInterval(() => {
+    if (i < steps.length) {
+      document.getElementById(steps[i]).classList.add('active');
+      i++;
+    } else {
+      clearInterval(interval);
+    }
+  }, 400);
+}
+
+function addMessage(role, text, meta = {}) {
+  const msgs = document.getElementById('messages');
+  const welcome = msgs.querySelector('.welcome');
+  if (welcome) welcome.remove();
+
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'user'
+    ? document.getElementById('userSelect').value[0].toUpperCase()
+    : 'M';
+
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+
+  const metaDiv = document.createElement('div');
+  metaDiv.className = 'msg-meta';
+  metaDiv.textContent = role === 'user'
+    ? document.getElementById('userSelect').value
+    : `MAEM · ${meta.agentUsed || 'executor'} agent`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.textContent = text;
+
+  body.appendChild(metaDiv);
+  body.appendChild(bubble);
+
+  if (role === 'agent' && (meta.memoriesRetrieved > 0 || meta.routingPath)) {
+    const tags = document.createElement('div');
+    tags.className = 'msg-tags';
+    if (meta.memoriesRetrieved > 0) {
+      const t = document.createElement('span');
+      t.className = 'msg-tag retrieved';
+      t.textContent = `⚡ ${meta.memoriesRetrieved} memories retrieved`;
+      tags.appendChild(t);
+      totalRetrieved += meta.memoriesRetrieved;
+      document.getElementById('statRetrieved').textContent = totalRetrieved;
+    }
+    const t2 = document.createElement('span');
+    t2.className = 'msg-tag routed';
+    t2.textContent = '🧭 Planner → Executor';
+    tags.appendChild(t2);
+    body.appendChild(tags);
+  }
+
+  div.appendChild(avatar);
+  div.appendChild(body);
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function addTyping() {
+  const msgs = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg agent';
+  div.id = 'typingIndicator';
+  div.innerHTML = `
+    <div class="msg-avatar">M</div>
+    <div class="msg-body">
+      <div class="msg-bubble">
+        <div class="typing"><span></span><span></span><span></span></div>
+      </div>
+    </div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping() {
+  const t = document.getElementById('typingIndicator');
+  if (t) t.remove();
+}
+
+function retentionColor(r) {
+  if (r > 0.7) return '#10b981';
+  if (r > 0.4) return '#f59e0b';
+  return '#ef4444';
+}
+
+// ── REAL fetch from backend ──
+async function fetchAndUpdatePanel(userId) {
+  const syncing = document.getElementById('panelSyncing');
+  syncing.style.display = 'inline';
+
+  try {
+    const res = await fetch(`${API}/metrics/${userId}`, {
+      headers: authHeaders()
+    });
+
+    if (!res.ok) {
+      let body = null;
+      try { body = await res.json(); } catch (_) {}
+      throw new Error(describeHttpError(res, body));
+    }
+
+    const data = await res.json();
+
+    memories = (data.memories || []).map(m => ({
+      content: m.content,
+      retention: m.retention,
+      stability: m.stability_hours,
+      reviews: m.access_count,
+      importance: m.priority_score,
+      agentId: m.agent_id || 'user',
+      shared: m.shared
+    }));
+
+    renderMemoryPanel(data);
+    await fetchAlerts(userId);
+
+  } catch (err) {
+    console.warn('Panel fetch failed:', err);
+    showToast(`Couldn't load memory panel: ${err.message}`, 'error');
+    renderPanelError(userId, err.message);
+  } finally {
+    syncing.style.display = 'none';
+  }
+}
+
+function renderPanelError(userId, message) {
+  const list = document.getElementById('memoryList');
+  list.innerHTML = `
+    <div class="panel-error">
+      ⚠️ ${message}
+      <br><button onclick="fetchAndUpdatePanel('${userId}')">Retry</button>
+    </div>`;
+  document.getElementById('episodeCount').textContent = '— episodes';
+}
+
+function renderMemoryPanel(data) {
+  const list = document.getElementById('memoryList');
+  list.innerHTML = '';
+
+  if (!memories.length) {
+    list.innerHTML = '<div style="text-align:center;padding:40px 16px;color:var(--text3);font-size:13px;">No memories yet.<br>Start a conversation!</div>';
+    document.getElementById('episodeCount').textContent = '0 episodes';
+    document.getElementById('statTotal').textContent = '0';
+    document.getElementById('statRetention').textContent = '—';
+    drawCurve(1.0);
+    return;
+  }
+
+  memories.slice(0, 8).forEach((m, idx) => {
+    const card = document.createElement('div');
+    card.className = `memory-card ${idx === 0 ? 'fresh' : ''}`;
+    const color = retentionColor(m.retention);
+
+    card.innerHTML = `
+      <span class="memory-agent-badge badge-${m.agentId}">${m.agentId}</span>
+      <div class="memory-content">${m.content}</div>
+      <div class="memory-stats">
+        <div class="stat">STABILITY <span>${m.stability.toFixed(1)}h</span></div>
+        <div class="stat">REVIEWS <span>${m.reviews}</span></div>
+        <div class="stat">PRIORITY <span>${(m.importance * 100).toFixed(0)}%</span></div>
+        <div class="stat">RETENTION <span style="color:${color}">${Math.round(m.retention * 100)}%</span></div>
+      </div>
+      <div class="retention-bar-wrap">
+        <div class="retention-bar" style="width:${m.retention * 100}%;background:${color}"></div>
+      </div>`;
+    list.appendChild(card);
+  });
+
+  document.getElementById('episodeCount').textContent = `${data.total_memories} episodes`;
+  document.getElementById('statTotal').textContent = data.total_memories;
+  document.getElementById('statRetention').textContent = Math.round(data.avg_retention * 100) + '%';
+  drawCurve(data.avg_retention, data.avg_stability || 24.0);
+  
+}
+
+function drawCurve(currentRetention, avgStabilityHours = 24.0) {
+  const canvas = document.getElementById('curveChart');
+  const ctx = canvas.getContext('2d');
+  canvas.width = (canvas.offsetWidth || 300) * window.devicePixelRatio;
+  canvas.height = 80 * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  const W = canvas.offsetWidth || 300;
+  const H = 80;
+  ctx.clearRect(0, 0, W, H);
+
+  // grid line
+  ctx.strokeStyle = '#1e1e2e';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.6);
+  ctx.lineTo(W, H * 0.6);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // draw curve using real stability
+  const maxHours = avgStabilityHours * 3;
+  ctx.beginPath();
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 2;
+  for (let x = 0; x <= W; x++) {
+    const t = (x / W) * maxHours;
+    const r = Math.exp(-t / avgStabilityHours);
+    const y = H - (r * (H - 8)) - 4;
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // current retention dot
+  const tNow = -avgStabilityHours * Math.log(Math.max(currentRetention, 0.001));
+  const xNow = Math.min((tNow / maxHours) * W, W - 5);
+  const yNow = H - (currentRetention * (H - 8)) - 4;
+  ctx.beginPath();
+  ctx.arc(xNow, yNow, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#00e5ff';
+  ctx.fill();
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+async function simulateTime() {
+  const userId = document.getElementById('userSelect').value;
+  const hours = parseFloat(document.getElementById('simHours').value);
+  const btn = document.getElementById('simBtn');
+  const originalLabel = btn.textContent;
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  btn.textContent = '⏳ Simulating…';
+
+  try {
+    const res = await fetch(`${API}/simulate_time`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ agent_id: userId, hours: hours })
+    });
+
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+
+    if (!res.ok || !data || data.status !== 'ok') {
+      throw new Error(describeHttpError(res, data));
+    }
+
+    await fetchAndUpdatePanel(userId);
+    showToast(`Aged ${userId}'s memories by ${hours}h.`, 'success', 2500);
+  } catch (err) {
+    console.error('Simulate time failed:', err);
+    showToast(`Couldn't simulate time: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.textContent = originalLabel;
+  }
+}
+
+async function fetchAlerts(userId) {
+  const banner = document.getElementById('alertBanner');
+  const heading = document.getElementById('alertHeading');
+  const subtitle = document.getElementById('alertSubtitle');
+  const alertList = document.getElementById('alertList');
+
+  if (userId !== 'rajan') {
+    banner.style.display = 'none';
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/alerts/${userId}`, {
+      headers: authHeaders()
+    });
+
+    if (!res.ok) {
+      let body = null;
+      try { body = await res.json(); } catch (_) {}
+      throw new Error(describeHttpError(res, body));
+    }
+
+    const data = await res.json();
+    banner.style.display = 'block';
+
+    if (data.alert_count > 0) {
+      heading.innerHTML = `🚨 CAREGIVER ALERT — ${data.alert_count} ${data.alert_count === 1 ? 'memory' : 'memories'} fading`;
+      heading.style.color = '#ef4444';
+      subtitle.textContent = 'These memories are decaying fast and may need reinforcement or a caregiver follow-up.';
+      subtitle.style.color = '#f87171';
+      alertList.innerHTML = data.alerts.map(a => `
+        <div>
+          <strong>${a.alert_level === 'critical' ? '🔴 CRITICAL' : '🟡 WARNING'}</strong>
+          — "${a.memory}" is only ${Math.round(a.retention * 100)}% retained
+        </div>
+      `).join('');
+    } else {
+      heading.innerHTML = `✅ No active caregiver alerts`;
+      heading.style.color = 'var(--accent3)';
+      subtitle.textContent = `Monitoring Rajan's memory retention — nothing is currently below the alert threshold.`;
+      subtitle.style.color = 'var(--text2)';
+      alertList.innerHTML = '';
+    }
+  } catch (err) {
+    console.warn('Alerts fetch failed:', err);
+    banner.style.display = 'block';
+    heading.innerHTML = `⚠️ Caregiver alerts unavailable`;
+    heading.style.color = 'var(--warn)';
+    subtitle.textContent = err.message;
+    subtitle.style.color = 'var(--warn)';
+    alertList.innerHTML = '';
+  }
+}
+
+async function showComparison() {
+  document.getElementById('comparisonModal').style.display = 'flex';
+  const statsEl = document.getElementById('comparisonStats');
+  statsEl.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px;">Loading comparison…</div>';
+
+  const btn = document.getElementById('compareBtn');
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+
+  try {
+    const [aliceRes, rajanRes] = await Promise.all([
+      fetch(`${API}/metrics/alice`, { headers: authHeaders() }),
+      fetch(`${API}/metrics/rajan`, { headers: authHeaders() })
+    ]);
+
+    if (!aliceRes.ok || !rajanRes.ok) {
+      const failed = !aliceRes.ok ? aliceRes : rajanRes;
+      let body = null;
+      try { body = await failed.json(); } catch (_) {}
+      throw new Error(describeHttpError(failed, body));
+    }
+
+    const alice = await aliceRes.json();
+    const rajan = await rajanRes.json();
+
+    renderComparison(alice, rajan);
+  } catch (err) {
+    console.error('Comparison failed:', err);
+    statsEl.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:#ef4444;padding:20px;">⚠️ Couldn't load comparison: ${err.message}</div>`;
+    showToast(`Couldn't load comparison: ${err.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '';
+  }
+}
+
+function renderComparison(alice, rajan) {
+  // draw comparison chart
+  const canvas = document.getElementById('comparisonChart');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio || 600;
+  canvas.height = 200 * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  
+  const W = canvas.offsetWidth || 600;
+  const H = 200;
+  ctx.clearRect(0, 0, W, H);
+  
+  // grid
+  ctx.strokeStyle = '#1e1e2e';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  for (let i = 1; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, H * i / 4);
+    ctx.lineTo(W, H * i / 4);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  
+  // labels
+  ctx.fillStyle = '#475569';
+  ctx.font = '11px Space Mono, monospace';
+  ctx.fillText('100%', 4, 14);
+  ctx.fillText('50%', 4, H/2 + 4);
+  ctx.fillText('0%', 4, H - 4);
+  
+  // Alice curve (blue)
+  const aliceS = alice.avg_stability || 24;
+  const maxH = Math.max(aliceS, (rajan.avg_stability || 8)) * 4;
+  
+  ctx.beginPath();
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 2.5;
+  for (let x = 0; x <= W; x++) {
+    const t = (x / W) * maxH;
+    const r = Math.exp(-t / aliceS);
+    const y = H - (r * (H - 10)) - 5;
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  
+  // Rajan curve (red)
+  const rajanS = (rajan.avg_stability || 8) / 3;
+  ctx.beginPath();
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 2.5;
+  for (let x = 0; x <= W; x++) {
+    const t = (x / W) * maxH;
+    const r = Math.exp(-t / rajanS);
+    const y = H - (r * (H - 10)) - 5;
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  
+  // legend
+  ctx.fillStyle = '#00e5ff';
+  ctx.fillRect(W - 140, 10, 12, 3);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '11px DM Sans, sans-serif';
+  ctx.fillText('Alice (Normal)', W - 124, 14);
+  
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(W - 140, 24, 12, 3);
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('Rajan (AD)', W - 124, 28);
+  
+  // stats
+  document.getElementById('comparisonStats').innerHTML = `
+    <div style="background:#16161f; border:1px solid #1e1e2e; border-radius:10px; padding:16px; text-align:center;">
+      <div style="color:#00e5ff; font-family:'Space Mono',monospace; font-size:11px; margin-bottom:8px;">ALICE — NORMAL</div>
+      <div style="font-size:28px; font-weight:700; color:#00e5ff;">${Math.round((alice.avg_retention || 1) * 100)}%</div>
+      <div style="font-size:11px; color:#475569; margin-top:4px;">Avg Retention</div>
+      <div style="font-size:13px; color:#94a3b8; margin-top:8px;">Stability: ${(alice.avg_stability || 24).toFixed(1)}h</div>
+      <div style="font-size:13px; color:#94a3b8;">Memories: ${alice.total_memories || 0}</div>
+    </div>
+    <div style="background:#16161f; border:1px solid rgba(239,68,68,0.3); border-radius:10px; padding:16px; text-align:center;">
+      <div style="color:#ef4444; font-family:'Space Mono',monospace; font-size:11px; margin-bottom:8px;">RAJAN — ALZHEIMER'S</div>
+      <div style="font-size:28px; font-weight:700; color:#ef4444;">${Math.round((rajan.avg_retention || 1) * 100)}%</div>
+      <div style="font-size:11px; color:#475569; margin-top:4px;">Avg Retention</div>
+      <div style="font-size:13px; color:#94a3b8; margin-top:8px;">Stability: ${(rajan.avg_stability || 8).toFixed(1)}h</div>
+      <div style="font-size:13px; color:#94a3b8;">Memories: ${rajan.total_memories || 0}</div>
+    </div>
+  `;
+}
+
+function closeComparison() {
+  document.getElementById('comparisonModal').style.display = 'none';
+}
+
+async function runEvaluation() {
+  const userId = document.getElementById('userSelect').value;
+  document.getElementById('evalModal').style.display = 'flex';
+  document.getElementById('evalResults').innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px;">Running evaluation...</div>';
+
+ const testQuestions = [
+    "What is my name?",
+    "What do I love or enjoy?",
+    "What do you know about my work or studies?",
+    "What important things have I told you?"
+];
+
+  try {
+    const res = await fetch(`${API}/evaluate`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        agent_id: userId,
+        test_questions: testQuestions
+      })
+    });
+
+    if (!res.ok) {
+      let body = null;
+      try { body = await res.json(); } catch (_) {}
+      throw new Error(describeHttpError(res, body));
+    }
+
+    const data = await res.json();
+    if (!data.results) {
+      throw new Error('Server returned an unexpected response.');
+    }
+
+    document.getElementById('evalResults').innerHTML = `
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:20px;">
+        <div style="background:#16161f; border-radius:10px; padding:16px; text-align:center;">
+          <div style="font-size:24px; font-weight:700; color:#00e5ff;">${Math.round(data.maem_recall_rate * 100)}%</div>
+          <div style="font-size:11px; color:#475569; margin-top:4px;">MAEM Recall Rate</div>
+        </div>
+        <div style="background:#16161f; border-radius:10px; padding:16px; text-align:center;">
+          <div style="font-size:24px; font-weight:700; color:#ef4444;">${Math.round(data.baseline_recall_rate * 100)}%</div>
+          <div style="font-size:11px; color:#475569; margin-top:4px;">Baseline Recall Rate</div>
+        </div>
+        <div style="background:#16161f; border-radius:10px; padding:16px; text-align:center;">
+          <div style="font-size:24px; font-weight:700; color:#10b981;">${data.improvement >= 0 ? '+' : ''}${Math.round(data.improvement * 100)}%</div>
+          <div style="font-size:11px; color:#475569; margin-top:4px;">Improvement</div>
+        </div>
+      </div>
+      ${(data.maem_accuracy !== null && data.maem_accuracy !== undefined) || (data.mean_relevance !== null && data.mean_relevance !== undefined) ? `
+      <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:11px; color:#94a3b8; margin:-8px 0 16px;">
+        ${data.maem_accuracy != null ? `<span>Answer accuracy — MAEM <b style="color:#00e5ff;">${Math.round(data.maem_accuracy * 100)}%</b> · baseline <b style="color:#ef4444;">${Math.round((data.baseline_accuracy || 0) * 100)}%</b></span>` : ''}
+        ${data.mean_relevance != null ? `<span>Mean memory relevance <b style="color:#10b981;">${data.mean_relevance.toFixed(2)}</b></span>` : ''}
+      </div>` : ''}
+      <div style="font-family:'Space Mono',monospace; font-size:11px; color:#475569; margin-bottom:12px;">QUESTION BY QUESTION</div>
+      ${data.results.map(r => `
+        <div style="background:#16161f; border:1px solid #1e1e2e; border-radius:10px; padding:14px; margin-bottom:10px;">
+          <div style="font-size:12px; color:#94a3b8; margin-bottom:8px;">Q: ${r.question}</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <div style="font-size:10px; color:#00e5ff; font-family:'Space Mono',monospace; margin-bottom:4px;">MAEM (${r.memories_used} memories used)</div>
+              <div style="font-size:12px; color:#e2e8f0;">${r.maem_response}</div>
+            </div>
+            <div>
+              <div style="font-size:10px; color:#ef4444; font-family:'Space Mono',monospace; margin-bottom:4px;">BASELINE (no memory)</div>
+              <div style="font-size:12px; color:#e2e8f0;">${r.baseline_response}</div>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  } catch (err) {
+    console.error('Evaluation failed:', err);
+    document.getElementById('evalResults').innerHTML =
+      `<div style="text-align:center;color:#ef4444;padding:20px;">⚠️ Evaluation failed: ${err.message}</div>`;
+    showToast(`Evaluation failed: ${err.message}`, 'error');
+  }
+}
+
+function closeEval() {
+  document.getElementById('evalModal').style.display = 'none';
+}
+
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const sendBtn = document.getElementById('sendBtn');
+  const msg = input.value.trim();
+  const userId = document.getElementById('userSelect').value;
+  if (!msg) return;
+
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.style.opacity = '0.6';
+
+  addMessage('user', msg);
+  addTyping();
+  animateRoute(['planner', 'executor', 'memory']);
+  document.getElementById('routeStatus').textContent = 'Processing...';
+
+  try {
+    const res = await fetch(`${API}/chat`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ message: msg, user_id: userId })
+    });
+
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+
+    if (!res.ok) {
+      throw new Error(describeHttpError(res, data));
+    }
+
+    removeTyping();
+    document.getElementById('routeStatus').textContent = 'Ready';
+
+    addMessage('agent', data.reply || data.response || 'No response', {
+      agentUsed: data.agent_used || 'executor',
+      memoriesRetrieved: data.memories_retrieved || 0,
+      routingPath: data.routing_path
+    });
+
+    // ── fetch real memory data after every message ──
+    await fetchAndUpdatePanel(userId);
+
+  } catch (err) {
+    removeTyping();
+    document.getElementById('routeStatus').textContent = 'Error';
+    addMessage('agent', `⚠️ ${err.message || "Could not connect to the MAEM server."}`);
+    showToast(`Message failed: ${err.message}`, 'error');
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.style.opacity = '';
+    input.focus();
+  }
+}
+
+// also refresh panel when user switches
+document.getElementById('userSelect').addEventListener('change', (e) => {
+  fetchAndUpdatePanel(e.target.value);
+});
+
+// init
+drawCurve(1.0, 24.0);
+if (!getApiKey()) {
+  showToast('Enter your API key above to connect to the MAEM server.', 'info', 6000);
+}
+fetchAndUpdatePanel(document.getElementById('userSelect').value);
+</script>
+<!-- Comparison Modal -->
+<div id="comparisonModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#111118; border:1px solid #1e1e2e; border-radius:16px; padding:24px; width:700px; max-width:95%;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <span style="font-family:'Space Mono',monospace; font-size:13px; color:#e2e8f0;">MEMORY DECAY COMPARISON</span>
+      <button onclick="closeComparison()" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:18px;">✕</button>
+    </div>
+    <canvas id="comparisonChart" style="width:100%; height:200px;"></canvas>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;" id="comparisonStats"></div>
+  </div>
+</div>
+
+<!-- Evaluation Modal -->
+<div id="evalModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
+  <div style="background:#111118; border:1px solid #1e1e2e; border-radius:16px; padding:24px; width:700px; max-width:95%; max-height:80vh; overflow-y:auto;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <span style="font-family:'Space Mono',monospace; font-size:13px; color:#e2e8f0;">EVALUATION RESULTS</span>
+      <button onclick="closeEval()" style="background:none; border:none; color:#94a3b8; cursor:pointer; font-size:18px;">✕</button>
+    </div>
+    <div id="evalResults"></div>
+  </div>
+</div>
+</body>
+</html>

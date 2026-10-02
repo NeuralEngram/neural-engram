@@ -1,0 +1,18 @@
+system:
+  name: multiagent-memory-system-UIP17
+  version: 1.0.0
+
+memory:
+  decay_rate: 0.5
+  stability_factor: 1.0
+  reinforcement_multiplier: 1.2
+
+agents:
+  - id: researcher
+    role: Gathers and stores new information
+  - id: synthesizer
+    role: Consolidates and summarizes across memories
+
+api:
+  host: 0.0.0.0
+  port: 8000

@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Qdrant local storage
+qdrant_data/
+qdrant_data_new/
+qdrant_data*/
+
+#sqllite store
+maem_app.db
+episodic_memory.db
+multi_agent_memory.db
+*.db-wal
+*.db-shm
+
+# Persistence manual-check marker (scripts/verify_persistence.py)
+scripts/.persistence_probe_memory_id
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Frontend (React + Vite)
+frontend/node_modules/
+
+!frontend/dist/
