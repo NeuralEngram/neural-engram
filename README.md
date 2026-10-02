@@ -1,35 +1,47 @@
-# 🧠 MAEM NeuralEngram — Multi-Agent Ebbinghaus Memory
+# MAEM NeuralEngram — Multi-Agent Ebbinghaus Memory
 
-A multi-agent AI assistant with biologically-inspired memory: what it learns
-fades over time following **Ebbinghaus's Forgetting Curve**, strengthens when
-it is recalled again, and — for monitored patients — alerts a caregiver by
-email when an important memory is about to be forgotten.
+MAEM NeuralEngram is an AI assistant with human-like memory: it recalls what
+users tell it, lets unused memories fade and strengthens repeated ones using
+Ebbinghaus's forgetting curve, and alerts caregivers when Alzheimer's patients
+start forgetting important things. An agentic, memory-augmented RAG system
+built on each user's evolving memory.
 
 ---
 
-## 📌 Overview
+## Overview
 
 Most chatbots either forget everything when the session ends or remember
 everything forever. NeuralEngram sits in between, like human memory:
 
-- Every message is stored with a **stability** value and a **retention**
-  score that decays over time: `R = e^(-t / S)`.
-- Recalling or repeating a memory **reinforces** it — stability grows, so it
+- Every memory has a **stability** value and a **retention** score that
+  decays over time: `R = e^(-t / S)`.
+- Recalling or repeating a memory **reinforces** it: stability grows, so it
   decays more slowly next time.
 - Memories whose retention falls below a threshold are **forgotten**
   (pruned) by a background scheduler.
-- Important memories (medicine, doctor, family, appointments…) that start
-  fading trigger a **caregiver alert** — shown on the dashboard and sent by
-  email.
+- For **Alzheimer's accounts**, memories fade faster according to the stage
+  (mild, moderate, severe), and important memories (medicine, doctor,
+  family, appointments) that start fading raise a **caregiver alert** on the
+  caregiver's dashboard and by email.
 
-The primary use case is an **Alzheimer's patient companion**: a patient
-profile (`rajan`) decays 3× faster than normal, so the system can
-demonstrate memory loss and caregiver intervention in minutes instead of
-days.
+It works as a general personal memory assistant for anyone (standard
+accounts), with Alzheimer's support and caregivers as a dedicated use case.
+
+### Results at a glance
+
+| Measure | Result |
+|---|---|
+| Retrieval accuracy (30-query labelled benchmark, all-MiniLM-L6-v2) | **93.3 %** (baseline 73.3 %) |
+| Retrieval F1 | **83.1 %** (baseline 34.4 %) |
+| Off-topic queries correctly given no memories | **100 %** (baseline 0 %) |
+| Irrelevant memories per query | **0.27** (baseline 4.23) |
+| Forgetting-curve accuracy | exact match to `e^(-t/S)` |
+| Automated tests | **1,056 passing** |
+| Evaluation gates | **29 / 29** |
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
                     ┌──────────────────────────┐
@@ -68,7 +80,7 @@ days.
 
 ---
 
-## 🔎 Retrieval pipeline (RAG)
+## Retrieval pipeline (RAG)
 
 NeuralEngram is an **agentic, memory-augmented RAG system**: instead of a
 fixed document set, it retrieves from the user's own long-term memory,
@@ -107,7 +119,7 @@ pick the best `RETRIEVAL_MIN_SCORE` for your embedding model.
 
 ---
 
-## 🧰 Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -124,7 +136,7 @@ pick the best `RETRIEVAL_MIN_SCORE` for your embedding model.
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 | Path | Description |
 |---|---|
@@ -152,12 +164,12 @@ pick the best `RETRIEVAL_MIN_SCORE` for your embedding model.
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Python 3.10 or newer
 - An Anthropic API key
-- Node.js 18+ (only to change the frontend; a built copy is included)
+- Node.js 18+ (only to change the frontend; a built copy is included in `frontend/dist`)
 - (Optional) A Gmail account with an App Password, for email alerts
 
 ### 1. Install
@@ -190,8 +202,8 @@ Edit `.env`:
 
 | Variable | Required | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | ✅ | Your Anthropic API key |
-| `MAEM_API_KEY` | ✅ | Any secret string. It is the access key that unlocks the web app, and API clients send it as the `X-API-Key` header |
+| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
+| `MAEM_API_KEY` | Yes | Any secret string. It is the access key that unlocks the web app, and API clients send it as the `X-API-Key` header |
 | `MAEM_JWT_SECRET` | — | Signs login sessions (default: derived from `MAEM_API_KEY`) |
 | `MAEM_TOKEN_HOURS` | — | How long a login lasts (default `12`) |
 | `MAEM_APP_DB_PATH` | — | Accounts database (default `maem_app.db` next to the memory DB) |
@@ -200,7 +212,7 @@ Edit `.env`:
 | `RETRIEVE_ASSISTANT_REPLIES` | — | `true` to let the bot's own replies be retrieved (default `false`) |
 | `ALLOWED_ORIGINS` | — | CORS origins (default: localhost) |
 | `NOTIFY_AGENT_IDS` | — | Extra API-only users to monitor (Alzheimer's accounts are monitored automatically) |
-| `AGENT_DECAY_MULTIPLIERS` | — | Faster decay per user, e.g. `rajan:3.0` |
+| `AGENT_DECAY_MULTIPLIERS` | — | Extra decay speeds for API-only users, e.g. `demo:3.0` (app accounts use their stage) |
 | `QDRANT_STORAGE_PATH` | — | Vector store folder (default `./qdrant_data`) |
 | `MAEM_DB_PATH` | — | SQLite file (default `./multi_agent_memory.db`) |
 | `ENABLE_EMAIL_ALERTS` | — | `true` to send caregiver emails |
@@ -233,7 +245,7 @@ python scripts/run_demo.py
 
 ---
 
-## 🖥️ The web app
+## The web app
 
 ### Accounts and roles
 
@@ -287,7 +299,7 @@ configured in `.env`), gets one email per alert level.
 
 ---
 
-## 🔌 Main API Endpoints
+## Main API Endpoints
 
 All routes except `GET /` and `GET /ui` require the `X-API-Key` header.
 The web app uses the `/app/...` routes, which also need a login token
@@ -296,13 +308,13 @@ The web app uses the `/app/...` routes, which also need a login token
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/` | Health check |
-| `GET` | `/ui` | Dashboard |
+| `GET` | `/ui` | Web app |
 | `POST` | `/chat` | Send a message (`{"message", "user_id"}`) |
 | `GET` | `/metrics/{agent_id}` | Retention / stability per memory |
 | `GET` | `/memories/{agent_id}` | List memories |
 | `POST` | `/reinforce` | Reinforce a memory |
 | `POST` | `/feedback/{agent_id}/{memory_id}` | Positive/negative feedback |
-| `POST` | `/simulate_time` | Age a user's memories (demo) |
+| `POST` | `/simulate_time` | Age a user's memories (testing) |
 | `GET` | `/alerts/{agent_id}` | Current caregiver alerts |
 | `POST` | `/alerts/{agent_id}/notify` | Send pending alerts now; shows whether email is enabled |
 | `POST` | `/decay`, `/cleanup` | Run decay / prune manually |
@@ -313,7 +325,7 @@ See <http://localhost:8000/docs> for request/response schemas.
 
 ---
 
-## 🧪 Testing & Evaluation
+## Testing & Evaluation
 
 ```bash
 pytest                                 # full test suite
@@ -331,13 +343,13 @@ The evaluation measures:
 - Retrieval quality and efficiency (precision, recall, MRR, noise
   rejection, re-embeddings per query)
 
-The dashboard's **Eval** button calls `POST /evaluate`, which compares
-answers with and without memory. Pass `expected_answers` (one per
-question, alternatives separated by `|`) to also score answer accuracy.
+`POST /evaluate` compares answers with and without memory for a list of
+questions. Pass `expected_answers` (one per question, alternatives
+separated by `|`) to also score answer accuracy.
 
 ---
 
-## 🧬 The Forgetting Curve
+## The Forgetting Curve
 
 ```
 R = e^(-t / S)
@@ -353,20 +365,24 @@ longer — mimicking how spaced repetition strengthens human memory.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-- [ ] Configurable decay profiles from the dashboard
-- [ ] External Qdrant server support for multi-process deployments
+- [x] Accounts with login, standard / Alzheimer's / caregiver roles
+- [x] Caregiver dashboard with alert history and retention trend
+- [x] Relevance-filtered, intent-routed retrieval with a labelled benchmark
+- [ ] Whole-word, multilingual matching for alert keywords
+- [ ] Docker image and one-command deployment
+- [ ] External Qdrant server for multi-process deployments
 - [ ] Multi-modal memory (image, audio)
-- [ ] Caregiver dashboard with alert history
+- [ ] Pilot study with real users
 
 ---
 
-## 📄 License
+## License
 
 MIT License.
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
 Inspired by Hermann Ebbinghaus's research on human memory and forgetting,
 adapted for multi-agent AI systems.
