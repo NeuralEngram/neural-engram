@@ -1,4 +1,4 @@
-# MAEM NeuralEngram — Multi-Agent Ebbinghaus Memory
+# MAEM NeuralEngram
 
 MAEM NeuralEngram is an AI assistant with human-like memory: it recalls what
 users tell it, lets unused memories fade and strengthens repeated ones using
@@ -6,383 +6,78 @@ Ebbinghaus's forgetting curve, and alerts caregivers when Alzheimer's patients
 start forgetting important things. An agentic, memory-augmented RAG system
 built on each user's evolving memory.
 
----
+## Features
 
-## Overview
+- Chat assistant that remembers what you tell it and recalls it when relevant
+- Memories fade over time (`R = e^(-t/S)`) and strengthen when recalled
+- Three account types: standard user, Alzheimer's patient, caregiver
+- Caregiver dashboard with alerts, memory health, reminders and trends
+- Email alerts when a patient's important memories start to fade
 
-Most chatbots either forget everything when the session ends or remember
-everything forever. NeuralEngram sits in between, like human memory:
+## Tech stack
 
-- Every memory has a **stability** value and a **retention** score that
-  decays over time: `R = e^(-t / S)`.
-- Recalling or repeating a memory **reinforces** it: stability grows, so it
-  decays more slowly next time.
-- Memories whose retention falls below a threshold are **forgotten**
-  (pruned) by a background scheduler.
-- For **Alzheimer's accounts**, memories fade faster according to the stage
-  (mild, moderate, severe), and important memories (medicine, doctor,
-  family, appointments) that start fading raise a **caregiver alert** on the
-  caregiver's dashboard and by email.
+Python, FastAPI, Anthropic Claude API, Sentence-Transformers, Qdrant, SQLite,
+React + Vite, pytest.
 
-It works as a general personal memory assistant for anyone (standard
-accounts), with Alzheimer's support and caregivers as a dedicated use case.
-
-### Results at a glance
-
-| Measure | Result |
-|---|---|
-| Retrieval accuracy (30-query labelled benchmark, all-MiniLM-L6-v2) | **93.3 %** (baseline 73.3 %) |
-| Retrieval F1 | **83.1 %** (baseline 34.4 %) |
-| Off-topic queries correctly given no memories | **100 %** (baseline 0 %) |
-| Irrelevant memories per query | **0.27** (baseline 4.23) |
-| Forgetting-curve accuracy | exact match to `e^(-t/S)` |
-| Automated tests | **1,056 passing** |
-| Evaluation gates | **29 / 29** |
-
----
-
-## Architecture
-
-```
-                    ┌──────────────────────────┐
-  Browser / API ──► │  FastAPI  (api/main.py)  │  auth · CORS · rate-limit
-                    └────────────┬─────────────┘
-                                 ▼
-                    ┌──────────────────────────┐
-                    │       Orchestrator       │
-                    └────────────┬─────────────┘
-                                 ▼
-      PlannerAgent ──► ExecutorAgent ──► Claude API (response)
-            │               │
-            └──────┬────────┘
-                   ▼
-            MemoryStore / MemoryOrchestrator
-        ┌──────────┼──────────────┐
-        ▼          ▼              ▼
-   Working     Episodic        Semantic
-   memory      (SQLite)        (Qdrant vectors)
-   (last 20)   retention,      similarity
-               stability       search
-                   │
-                   ▼
-   MemoryScheduler (every 5 min) ──► decay · prune · caregiver alerts ──► Email
-```
-
-- **PlannerAgent** detects intent, decides whether and how much to
-  retrieve, does the turn's single retrieval, and reinforces the memories
-  that were used.
-- **ExecutorAgent** builds the prompt from the retrieved memories and
-  recent conversation, calls the LLM, and stores the turn.
-- **MemoryAgent / MemoryStore** store, retrieve, reinforce and forget
-  memories across the three tiers.
-- **MemoryScheduler** runs decay and cleanup in the background and triggers
-  caregiver notifications.
-
----
-
-## Retrieval pipeline (RAG)
-
-NeuralEngram is an **agentic, memory-augmented RAG system**: instead of a
-fixed document set, it retrieves from the user's own long-term memory,
-which grows, fades and strengthens over time.
-
-One chat turn:
-
-1. **Intent routing** (`PlannerAgent`) — the message is classified as
-   *memory*, *reasoning*, *general* or *small talk*. Personal references
-   ("my", "did I", "where do I") count as memory questions.
-   - Small talk ("hi", "ok thanks") → **no retrieval at all**.
-   - Otherwise top-k is set by intent: memory 8, reasoning 6, general 4.
-2. **One embedding, one retrieval** — the query is embedded once and
-   retrieved once; the result and the embedding are handed to
-   `ExecutorAgent`, which reuses both.
-3. **Hybrid search** — semantic (Qdrant vector index) + episodic (cached
-   unit vectors, scored with one matrix–vector product; stored memories
-   are never re-embedded at query time).
-4. **Relevance cut-off** — only memories with cosine similarity ≥
-   `RETRIEVAL_MIN_SCORE` survive. Forgotten-but-not-yet-pruned memories
-   and the assistant's own replies are excluded.
-5. **Fusion & ranking** — cross-tier dedup, ranked by relevance (ties
-   broken by retention), packed into a 4 000-token budget (an oversized
-   memory is skipped, not allowed to block the rest).
-6. **Generate** — Claude answers with the memory context.
-7. **Reinforce** — only after a successful answer, and only the
-   memories that were actually used, get reinforced (stability ↑).
-   Unrelated memories keep fading, as the forgetting curve intends.
-
-**Measuring it.** `python -m evaluation.retrieval_eval` runs a labelled
-benchmark (22 answerable questions with gold memories + 8 no-answer
-queries) and writes `evaluation/RETRIEVAL_RESULTS.md` with hit rate,
-precision, recall, F1, MRR, noise rejection, irrelevant memories per
-query and latency — baseline vs the current pipeline, plus a sweep to
-pick the best `RETRIEVAL_MIN_SCORE` for your embedding model.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Language | Python 3.10+ |
-| LLM | Anthropic Claude API |
-| Embeddings | Sentence-Transformers (`all-MiniLM-L6-v2`) |
-| Vector DB | Qdrant (embedded, on-disk) |
-| Episodic DB | SQLite (WAL mode) |
-| API | FastAPI + Uvicorn, Pydantic v2, SlowAPI |
-| Notifications | SMTP email (Gmail), optional Twilio SMS |
-| Frontend | React 18 + Vite (served by FastAPI at `/ui`) |
-| Accounts | SQLite, PBKDF2 password hashing, JWT sessions |
-| Testing | pytest, httpx |
-
----
-
-## Project Structure
-
-| Path | Description |
-|---|---|
-| `agents/` | `PlannerAgent`, `ExecutorAgent`, `MemoryAgent`, shared `BaseAgent` |
-| `memory/ebbinghaus.py` | Forgetting-curve maths: retention, reinforcement, thresholds |
-| `memory/working_memory.py` | Short-term buffer of recent turns |
-| `memory/episodic_memory.py` | SQLite-backed episodic memory with decay |
-| `memory/semantic_memory.py` | Qdrant-backed vector memory |
-| `memory/memory_orchestrator.py` | Coordinates the three memory tiers |
-| `memory/memory_store.py` | Public memory API used by the agents |
-| `memory/retrieval_config.py` | Retrieval tuning (relevance cut-off, top-k per intent) |
-| `memory/scheduler.py` | Background decay / cleanup loop |
-| `memory/notifier.py` | Caregiver alert detection + email/SMS sending |
-| `orchestrator/orchestrator.py` | Wires everything together; LLM calls |
-| `api/main.py` | REST API, serves the web app at `/ui` |
-| `api/app_routes.py` | Application API (`/app/...`): login, roles, reminders, alerts |
-| `accounts/` | Users, caregiver links, reminders, alert history, trends |
-| `frontend/` | React + Vite web app (`src/components/` one file per screen area) |
-| `api/maem_multiagent.html` | Older single-file dashboard (used only if `frontend/dist` is missing) |
-| `evaluation/evaluate.py` | Evaluation harness (writes `evaluation/RESULTS.md`) |
-| `evaluation/retrieval_eval.py` | Retrieval benchmark (writes `evaluation/RETRIEVAL_RESULTS.md`) |
-| `scripts/` | Terminal chat, demo, and persistence-check scripts |
-| `tests/` | Unit and integration tests |
-| `docs/` | Architecture notes |
-
----
-
-## Getting Started
-
-### Prerequisites
-- Python 3.10 or newer
-- An Anthropic API key
-- Node.js 18+ (only to change the frontend; a built copy is included in `frontend/dist`)
-- (Optional) A Gmail account with an App Password, for email alerts
-
-### 1. Install
+## Setup
 
 ```bash
-git clone https://github.com/<your-username>/maem_neuralengram.git
-cd maem_neuralengram
-
 python -m venv venv
-# Windows:
-venv\Scripts\activate
-# macOS / Linux:
-source venv/bin/activate
-
+venv\Scripts\activate            # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
+copy .env.example .env           # macOS/Linux: cp .env.example .env
 ```
 
-The first run downloads the `all-MiniLM-L6-v2` embedding model (~90 MB).
+In `.env`, set at least:
 
-### 2. Configure
-
-```bash
-# Windows:
-copy .env.example .env
-# macOS / Linux:
-cp .env.example .env
+```
+ANTHROPIC_API_KEY=your-anthropic-key
+MAEM_API_KEY=any-secret-access-key
 ```
 
-Edit `.env`:
+For email alerts, also fill in the `SMTP_*` settings (see `.env.example`).
 
-| Variable | Required | Description |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | Yes | Your Anthropic API key |
-| `MAEM_API_KEY` | Yes | Any secret string. It is the access key that unlocks the web app, and API clients send it as the `X-API-Key` header |
-| `MAEM_JWT_SECRET` | — | Signs login sessions (default: derived from `MAEM_API_KEY`) |
-| `MAEM_TOKEN_HOURS` | — | How long a login lasts (default `12`) |
-| `MAEM_APP_DB_PATH` | — | Accounts database (default `maem_app.db` next to the memory DB) |
-| `CLAUDE_MODEL` | — | Chat model (default `claude-sonnet-5-5`) |
-| `RETRIEVAL_MIN_SCORE` | — | Relevance cut-off for retrieval, 0–1 (default `0.30`) |
-| `RETRIEVE_ASSISTANT_REPLIES` | — | `true` to let the bot's own replies be retrieved (default `false`) |
-| `ALLOWED_ORIGINS` | — | CORS origins (default: localhost) |
-| `NOTIFY_AGENT_IDS` | — | Extra API-only users to monitor (Alzheimer's accounts are monitored automatically) |
-| `AGENT_DECAY_MULTIPLIERS` | — | Extra decay speeds for API-only users, e.g. `demo:3.0` (app accounts use their stage) |
-| `QDRANT_STORAGE_PATH` | — | Vector store folder (default `./qdrant_data`) |
-| `MAEM_DB_PATH` | — | SQLite file (default `./multi_agent_memory.db`) |
-| `ENABLE_EMAIL_ALERTS` | — | `true` to send caregiver emails |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` | if email on | SMTP login (Gmail: `smtp.gmail.com`, `587`, your address, a 16-char App Password) |
-| `ALERT_EMAIL_FROM`, `ALERT_EMAIL_TO` | if email on | Sender and caregiver addresses |
-
-> `.env` is read only at startup — restart the server after editing it.
-
-### 3. Run
+## Run
 
 ```bash
 uvicorn api.main:app --reload
 ```
-Open <http://localhost:8000/ui>, enter your `MAEM_API_KEY` to unlock the
-app, then sign in. Interactive API docs: <http://localhost:8000/docs>.
 
-**Changing the frontend** (needs Node.js):
-```bash
-cd frontend
-npm install          # first time only
-npm run dev          # live-reload at http://localhost:5173/ui/ (API proxied to :8000)
-npm run build        # writes frontend/dist, which /ui serves
-```
+Open <http://localhost:8000/ui>, enter your `MAEM_API_KEY`, then sign in.
 
-**Terminal chat / scripted demo**
-```bash
-python scripts/run_system.py
-python scripts/run_demo.py
-```
+## Demo accounts
 
----
+Password for each account is the username followed by `@123` (e.g. `will@123`).
 
-## The web app
-
-### Accounts and roles
-
-| Account type | What they get |
+| Type | Usernames |
 |---|---|
-| **Standard** | Personal memory tracking: chat, memories, reminders. Never linked to a caregiver. |
-| **Alzheimer's support** | Everything above, plus a "today" card, gentle reminders of fading important memories, larger text, a severity-based decay speed, and one caregiver. |
-| **Caregiver** | A dashboard for their own Alzheimer's patients only: fading-memory alerts (mark as handled, history), memory health, retention trend, reminders and memories they can add, email alert settings. |
+| Standard | arjun, sid, grace, ivy, chris |
+| Alzheimer's | will, henry, siri, zoya, riko |
+| Caregiver | siya (Will, Henry, Siri), ansh (Zoya, Riko) |
 
-Access is layered: the **access key** (`MAEM_API_KEY`) unlocks the app,
-then each person **signs in** with their username and password. A user sees
-only their own data; a caregiver sees only their linked patients.
-
-### Accounts created on first run
-
-| Username | Type | Notes |
-|---|---|---|
-| `arjun`, `sid`, `grace`, `ivy`, `chris` | Standard | |
-| `will` | Alzheimer's, mild | forgets 1.5× faster; caregiver Siya |
-| `henry` | Alzheimer's, mild | 2× faster; caregiver Siya |
-| `siri` | Alzheimer's, moderate | 3× faster; caregiver Siya |
-| `zoya` | Alzheimer's, moderate | 4× faster; caregiver Ansh |
-| `riko` | Alzheimer's, severe | 5× faster; caregiver Ansh |
-| `siya`, `ansh` | Caregiver | |
-
-Default password: the username followed by `@123` (for example `will@123`).
-Change it in **Settings → Account**.
-
-### Screens
-
-- **Home** (users): chat, quick questions, "Remember this" to save an
-  important fact, today's reminders and relevant memories, and reminders
-  set by you or your caregiver.
-- **Memories** (users): every memory with retention, importance, priority,
-  times recalled and stability. Text fades as retention drops; filter by
-  strong / fading / at risk, sort, refresh a memory, add one.
-- **Dashboard** (caregivers): pick a patient; alerts, memory health,
-  retention trend, reminders and memories.
-- **Settings**: account and password, light/dark theme, email alerts
-  (caregivers), memory tools (simulate time, compare forgetting), and
-  start fresh (delete your memories, or every account's with the access key).
-
-### Caregiver alerts
-An alert fires for an Alzheimer's account when a memory that contains a
-critical keyword (*medicine, medication, doctor, appointment, emergency,
-hospital, blood pressure, insulin, tablet, daughter, son, family, home*)
-drops below **50 % retention** (warning) or **30 %** (critical). Checks run
-every 5 minutes and right after a time simulation. The caregiver sees it on
-their dashboard and, if they turned on email alerts in Settings (and SMTP is
-configured in `.env`), gets one email per alert level.
-
----
-
-## Main API Endpoints
-
-All routes except `GET /` and `GET /ui` require the `X-API-Key` header.
-The web app uses the `/app/...` routes, which also need a login token
-(`Authorization: Bearer …` from `POST /app/auth/login`); see `/docs`.
-
-| Method | Route | Purpose |
-|---|---|---|
-| `GET` | `/` | Health check |
-| `GET` | `/ui` | Web app |
-| `POST` | `/chat` | Send a message (`{"message", "user_id"}`) |
-| `GET` | `/metrics/{agent_id}` | Retention / stability per memory |
-| `GET` | `/memories/{agent_id}` | List memories |
-| `POST` | `/reinforce` | Reinforce a memory |
-| `POST` | `/feedback/{agent_id}/{memory_id}` | Positive/negative feedback |
-| `POST` | `/simulate_time` | Age a user's memories (testing) |
-| `GET` | `/alerts/{agent_id}` | Current caregiver alerts |
-| `POST` | `/alerts/{agent_id}/notify` | Send pending alerts now; shows whether email is enabled |
-| `POST` | `/decay`, `/cleanup` | Run decay / prune manually |
-| `GET` | `/scheduler/status` | Background scheduler status |
-| `POST` | `/evaluate` | Memory vs no-memory comparison (optional answer accuracy) |
-
-See <http://localhost:8000/docs> for request/response schemas.
-
----
-
-## Testing & Evaluation
+## Tests and evaluation
 
 ```bash
-pytest                                 # full test suite
-python -m evaluation.evaluate          # correctness gates → evaluation/RESULTS.md
-python -m evaluation.retrieval_eval    # retrieval benchmark → evaluation/RETRIEVAL_RESULTS.md
+pytest
+python -m evaluation.evaluate
+python -m evaluation.retrieval_eval
 ```
 
-To check that memory survives a server restart, follow the steps in
-`scripts/verify_persistence.py`.
+Retrieval accuracy on a 30-query labelled benchmark: **93.3%** (baseline 73.3%).
 
-The evaluation measures:
-- Retention accuracy against the forgetting curve
-- Caregiver-alert precision (right memories, right level, no duplicates)
-- Feedback / reinforcement effects on stability
-- Retrieval quality and efficiency (precision, recall, MRR, noise
-  rejection, re-embeddings per query)
-
-`POST /evaluate` compares answers with and without memory for a list of
-questions. Pass `expected_answers` (one per question, alternatives
-separated by `|`) to also score answer accuracy.
-
----
-
-## The Forgetting Curve
+## Project structure
 
 ```
-R = e^(-t / S)
+agents/         Planner and executor agents
+memory/         Working, episodic and semantic memory, forgetting curve
+orchestrator/   Connects agents, memory and the LLM
+accounts/       Users, caregivers, reminders, alerts
+api/            FastAPI backend
+frontend/       React + Vite web app
+evaluation/     Evaluation and retrieval benchmark
+tests/          Automated tests
 ```
-
-- **R** — retention (0–1)
-- **t** — hours since the memory was last reviewed
-- **S** — stability in hours; grows with each reinforcement and with
-  importance, and shrinks for users with a decay multiplier > 1
-
-Each reinforcement increases **S**, flattening the curve so the memory lasts
-longer — mimicking how spaced repetition strengthens human memory.
-
----
-
-## Roadmap
-
-- [x] Accounts with login, standard / Alzheimer's / caregiver roles
-- [x] Caregiver dashboard with alert history and retention trend
-- [x] Relevance-filtered, intent-routed retrieval with a labelled benchmark
-- [ ] Whole-word, multilingual matching for alert keywords
-- [ ] Docker image and one-command deployment
-- [ ] External Qdrant server for multi-process deployments
-- [ ] Multi-modal memory (image, audio)
-- [ ] Pilot study with real users
-
----
 
 ## License
 
-MIT License.
-
-## Acknowledgements
-
-Inspired by Hermann Ebbinghaus's research on human memory and forgetting,
-adapted for multi-agent AI systems.
+MIT
