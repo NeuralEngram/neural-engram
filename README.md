@@ -16,28 +16,16 @@ built on each user's evolving memory.
 
 ## Tech stack
 
-| Layer | Technology | Used for |
-|---|---|---|
-| Language | Python 3.10+ | Backend, agents, memory system |
-| LLM | Anthropic Claude API (`claude-sonnet-5-5`) | Generating chat replies |
-| Embeddings | Sentence-Transformers (`all-MiniLM-L6-v2`, 384-dim) | Turning text into vectors for similarity search |
-| Vector database | Qdrant (embedded, on disk) | Semantic memory: finding memories by meaning |
-| Relational database | SQLite (WAL mode) | Episodic memory, accounts, reminders, alerts, trends |
-| Numerical computing | NumPy | Vector similarity and decay calculations |
-| Memory model | Ebbinghaus forgetting curve `R = e^(-t/S)` | Decay, reinforcement and forgetting |
-| Backend framework | FastAPI + Uvicorn | REST API and serving the web app |
-| Validation | Pydantic v2 | Request and response models |
-| Authentication | PyJWT (HS256 tokens), PBKDF2-SHA256 password hashing | Login sessions and stored passwords |
-| Security | API-key access gate, role-based access, CORS, SlowAPI rate limiting | Protecting data and routes |
-| Configuration | python-dotenv | Loading settings from `.env` |
-| Background jobs | Python `threading` scheduler | Decay, cleanup and alert checks every 5 minutes |
-| Notifications | SMTP (Gmail), optional Twilio SMS | Caregiver alerts |
-| Frontend | React 18 + Vite 5 | Web app (login, chat, memories, caregiver dashboard, settings) |
-| Styling and charts | Plain CSS with light and dark themes, inline SVG charts | UI design and retention charts |
-| Typography | Atkinson Hyperlegible | Readable text for elderly users |
-| Architecture | Multi-agent pipeline: Planner → Executor → Memory | Intent routing, retrieval and response |
-| Testing | pytest, httpx (FastAPI TestClient) | 1,056 automated tests |
-| Evaluation | Custom harness + labelled retrieval benchmark | 29 quality gates; 93.3% retrieval accuracy |
+| Layer | Technology |
+|---|---|
+| Backend | Python, FastAPI |
+| AI model | Anthropic Claude API |
+| Embeddings | Sentence-Transformers (all-MiniLM-L6-v2) |
+| Databases | Qdrant (vectors), SQLite (memories, accounts) |
+| Frontend | React + Vite |
+| Auth | JWT login, hashed passwords |
+| Alerts | Email (SMTP) |
+| Testing | pytest |
 
 ## Setup
 
